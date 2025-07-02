@@ -1,0 +1,37 @@
+import os
+from dotenv import load_dotenv
+import streamlit as st
+from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, Settings
+from llama_index.llms import OpenAI
+from llama_index.embeddings.openai import OpenAIEmbedding
+
+# 1. Charger la clé API depuis le fichier .env
+load_dotenv()
+api_key = os.getenv("OPENAI_API_KEY")
+
+# 2. Configurer l'API
+os.environ["OPENAI_API_KEY"] = api_key
+Settings.llm = OpenAI(model="gpt-3.5-turbo", temperature=0)
+Settings.embed_model = OpenAIEmbedding()
+
+# 3. Lire le PDF (à modifier si le fichier s'appelle autrement)
+PDF_FILE = "edf_report.pdf"
+documents = SimpleDirectoryReader(input_files=[PDF_FILE]).load_data()
+
+# 4. Construire l'index
+index = VectorStoreIndex.from_documents(documents)
+query_engine = index.as_query_engine(similarity_top_k=4)
+
+# 5. Interface Streamlit
+st.set_page_config(page_title="Analyse Climat PDF", page_icon="📄")
+st.title("📄 Analyse du plan de transition climatique")
+
+st.write("Posez vos questions sur le PDF.")
+
+question = st.text_input("❓ Votre question ici")
+
+if st.button("Envoyer") or question:
+    if question.strip() != "":
+        response = query_engine.query(question)
+        st.write("📌 Réponse :")
+        st.markdown(response.response)
