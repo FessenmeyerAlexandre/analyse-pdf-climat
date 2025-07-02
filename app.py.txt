@@ -5,33 +5,45 @@ from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, Settings
 from llama_index.llms import OpenAI
 from llama_index.embeddings.openai import OpenAIEmbedding
 
-# 1. Charger la clé API depuis le fichier .env
+# 1. Charger la clé API
 load_dotenv()
 api_key = os.getenv("OPENAI_API_KEY")
-
-# 2. Configurer l'API
 os.environ["OPENAI_API_KEY"] = api_key
+
+# 2. Configuration du modèle
 Settings.llm = OpenAI(model="gpt-3.5-turbo", temperature=0)
 Settings.embed_model = OpenAIEmbedding()
 
-# 3. Lire le PDF (à modifier si le fichier s'appelle autrement)
-PDF_FILE = "edf_report.pdf"
-documents = SimpleDirectoryReader(input_files=[PDF_FILE]).load_data()
-
-# 4. Construire l'index
-index = VectorStoreIndex.from_documents(documents)
-query_engine = index.as_query_engine(similarity_top_k=4)
-
-# 5. Interface Streamlit
-st.set_page_config(page_title="Analyse Climat PDF", page_icon="📄")
+# 3. Interface
+st.set_page_config(page_title="Analyse Climat PDF", page_icon="🌍", layout="wide")
 st.title("📄 Analyse du plan de transition climatique")
 
-st.write("Posez vos questions sur le PDF.")
+# 4. Upload de fichier
+uploaded_file = st.file_uploader("Upload un fichier PDF", type=["pdf"])
 
-question = st.text_input("❓ Votre question ici")
+if uploaded_file:
+    with open("temp.pdf", "wb") as f:
+        f.write(uploaded_file.read())
 
-if st.button("Envoyer") or question:
-    if question.strip() != "":
-        response = query_engine.query(question)
-        st.write("📌 Réponse :")
-        st.markdown(response.response)
+    with st.spinner("📚 Lecture et indexation du PDF..."):
+        documents = SimpleDirectoryReader(input_files=["temp.pdf"]).load_data()
+        index = VectorStoreIndex.from_documents(documents)
+        query_engine = index.as_query_engine(similarity_top_k=4)
+
+    st.subheader("🤖 Posez vos questions (jusqu’à 40)")
+
+    questions = []
+    for i in range(40):
+        question = st.text_input(f"Question {i+1}", key=f"q{i}")
+        if question.strip():
+            questions.append(question.strip())
+
+    if st.button("🎯 Interroger le document") and questions:
+        for i, q in enumerate(questions):
+            with st.spinner(f"Traitement de la question {i+1}..."):
+                response = query_engine.query(q)
+                st.markdown(f"**Q{i+1} : {q}**")
+                st.markdown(f"📎 {response.response}")
+                st.markdown("---")
+else:
+    st.info("📥 Merci de déposer un fichier PDF pour commencer.")
