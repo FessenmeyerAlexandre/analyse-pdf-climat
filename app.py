@@ -1,13 +1,44 @@
 import os
+import uuid
+import csv
 from dotenv import load_dotenv
 import streamlit as st
-from PIL import Image
 from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, Settings
 from llama_index.llms.openai import OpenAI
 from llama_index.embeddings.openai import OpenAIEmbedding
-import uuid
 
-# 1. Charger la clé API
+# --- CONFIGURATION APP ---
+st.set_page_config(
+    page_title="Analyse Climat PDF",
+    page_icon="🌍",
+    layout="wide"
+)
+
+# --- FONCTION POUR ENREGISTRER CSV ---
+def enregistrer_reponses_csv(donnees, nom_fichier):
+    with open(nom_fichier, mode='w', newline='', encoding='utf-8') as fichier_csv:
+        writer = csv.writer(fichier_csv)
+        writer.writerow(["Question", "Réponse"])
+        for question, reponse in donnees:
+            writer.writerow([question, reponse])
+
+# --- MOT DE PASSE ---
+if 'auth' not in st.session_state:
+    st.session_state.auth = False
+
+if not st.session_state.auth:
+    st.image("fa96e2d8-c077-4c54-8469-91797574f47c.png", width=200)
+    st.title("🔐 Accès à l'application")
+    mdp = st.text_input("Entrez le mot de passe", type="password")
+    if st.button("Valider"):
+        if mdp == "europlace2025":
+            st.session_state.auth = True
+            st.experimental_rerun()
+        else:
+            st.error("Mot de passe incorrect.")
+    st.stop()
+
+# --- CHARGEMENT CLÉ API ---
 load_dotenv()
 api_key = os.getenv("OPENAI_API_KEY")
 if not api_key:
@@ -15,50 +46,24 @@ if not api_key:
     st.stop()
 os.environ["OPENAI_API_KEY"] = api_key
 
-# 2. Configuration du modèle
+# --- CONFIGURATION LLM ---
 Settings.llm = OpenAI(model="gpt-3.5-turbo", temperature=0)
 Settings.embed_model = OpenAIEmbedding()
 
-# 3. Design Europlace
-st.set_page_config(page_title="Analyse Climat PDF", page_icon="🌍", layout="wide")
-
-# Couleurs et style
-st.markdown(
-    """
-    <style>
-    .main {
-        background-color: #ffffff;
-        color: #001f4d;
-    }
-    h1 {
-        color: #002a5c;
-    }
-    .stButton>button {
-        background-color: #002a5c;
-        color: white;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
-# 4. Logo Europlace
-logo = Image.open("fa96e2d8-c077-4c54-8469-91797574f47c.png")
-st.image(logo, width=180)
-
+# --- INTERFACE PRINCIPALE ---
+st.image("fa96e2d8-c077-4c54-8469-91797574f47c.png", width=100)
 st.title("📄 Analyse du plan de transition climatique")
 
-# 5. Upload du fichier
 uploaded_file = st.file_uploader("Upload un fichier PDF", type=["pdf"])
 
 if uploaded_file:
-    filename = f"{uuid.uuid4().hex}.pdf"
-    with open(filename, "wb") as f:
+    nom_pdf = f"{uuid.uuid4().hex}.pdf"
+    with open(nom_pdf, "wb") as f:
         f.write(uploaded_file.read())
 
     try:
         with st.spinner("📚 Lecture et indexation du PDF..."):
-            documents = SimpleDirectoryReader(input_files=[filename]).load_data()
+            documents = SimpleDirectoryReader(input_files=[nom_pdf]).load_data()
             index = VectorStoreIndex.from_documents(documents)
             query_engine = index.as_query_engine(similarity_top_k=4)
     except Exception as e:
@@ -66,24 +71,32 @@ if uploaded_file:
         st.stop()
 
     st.subheader("🤖 Posez vos questions (jusqu’à 40)")
-
     questions = []
     for i in range(40):
-        question = st.text_input(f"Question {i+1}", key=f"q{i}")
-        if question.strip():
-            questions.append(question.strip())
+        q = st.text_input(f"Question {i+1}", key=f"q{i}")
+        if q.strip():
+            questions.append(q.strip())
 
     if st.button("🎯 Interroger le document") and questions:
-        with open("historique_reponses.txt", "w", encoding="utf-8") as file:
-            for i, q in enumerate(questions):
-                with st.spinner(f"Traitement de la question {i+1}..."):
-                    response = query_engine.query(q)
+        reponses = []
+        for i, q in enumerate(questions):
+            with st.spinner(f"Traitement de la question {i+1}..."):
+                try:
+                    r = query_engine.query(q)
                     st.markdown(f"**Q{i+1} : {q}**")
-                    st.markdown(f"📎 {response.response}")
+                    st.markdown(f"📎 {r.response}")
                     st.markdown("---")
-                    file.write(f"Q{i+1}: {q}\n")
-                    file.write(f"Réponse: {response.response}\n")
-                    file.write("-" * 50 + "\n")
+                    reponses.append((q, r.response))
+                except Exception as e:
+                    st.error(f"Erreur pour la question {i+1} : {e}")
 
+        if reponses:
+            if st.download_button(
+                label="📥 Télécharger les réponses en CSV",
+                data='\n'.join([f'{q};{r}' for q, r in reponses]),
+                file_name="reponses_analyse_climat.csv",
+                mime="text/csv"
+            ):
+                st.success("Fichier CSV prêt !")
 else:
     st.info("📥 Merci de déposer un fichier PDF pour commencer.")
